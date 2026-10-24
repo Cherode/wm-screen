@@ -208,6 +208,9 @@
   el("q").addEventListener("input", function(e){ state.q=e.target.value.trim(); render(); });
   el("refresh").addEventListener("click", load);
   load(); tick();
+  // 深链：?detail=产品代码 自动打开详情弹层
+  var dc = new URLSearchParams(location.search).get("detail");
+  if (dc) setTimeout(function(){ var p = (window._list||[]).filter(function(x){return x.code===dc})[0] || DATA.products.filter(function(x){return x.code===dc})[0]; if(p) openDetail(p); }, 300);
 })();
 </script>
 </body>
