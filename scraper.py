@@ -91,6 +91,32 @@ def fetch_cmb_paged(endpoint, max_pages=80):
     return out
 
 
+HIST_URL = "https://mobile.cmbchina.com/ientrustfinance/product-statistics/get-history-value"
+
+
+def fetch_history(code, saa):
+    """招行渠道官方净值历史：日频，含七日年化/万份收益/单位净值"""
+    import time
+    body = {"saaCode": saa or "D07", "ripInn": code, "yDalCod": "N",
+            "ySaaCod": "", "yFndInn": "", "yNavDat": "0"}
+    try:
+        data = post_json(HIST_URL, body)
+        rows = ((data.get("bizResult") or {}).get("data") or {}).get("historyValueLists") or []
+    except Exception:
+        return []
+    out = []
+    for r in rows[:90]:  # 接口倒序，取最近90天
+        def f(k):
+            try:
+                return float(r.get(k))
+            except Exception:
+                return None
+        out.append({"d": r.get("date"), "nav": f("unitNetValue"), "w": f("tenThousandProfit"), "s7": f("sevenDaysAnnualProfit")})
+    out.reverse()
+    time.sleep(0.12)
+    return out
+
+
 def fetch_cmb():
     products = []
     for ep in ("alllist", "cashlistnew"):
@@ -118,6 +144,7 @@ def main():
             "yield_pct": p.get("prdRat", ""),
             "yield_type": p.get("ratDes", ""),
             "holding_desc": p.get("terDay", ""),
+            "saa": p.get("saaCod", ""),
             "holding_days": parse_hold_days(p.get("terDay")),
             "min_buy": parse_min_buy(p.get("prdInf")),
             "note": p.get("prdInf", ""),
@@ -155,7 +182,20 @@ def main():
         for p in kept:
             w.writerow([now.strftime("%Y-%m-%d"), p["code"], p["name"], p["issuer"], p["risk"], p["yield_pct"], p["yield_type"], p["holding_days"]])
 
-    # 历史序列（供网页画图）：code -> [{d,name,risk,y,t}]
+    # 官方净值历史（逐产品，日频）
+    hist_api = {}
+    if os.environ.get("WM_NOHIST") == "1" and (WEB / "history.json").exists():
+        hist_api = json.loads((WEB / "history.json").read_text(encoding="utf-8"))
+    elif os.environ.get("WM_NOHIST") != "1":
+        for i, p in enumerate(kept):
+            rows = fetch_history(p["code"], p.get("saa"))
+            if rows:
+                hist_api[p["code"]] = rows
+            if (i + 1) % 60 == 0:
+                sys.stderr.write("history %d/%d\n" % (i + 1, len(kept)))
+    (WEB / "history.json").write_text(json.dumps(hist_api, ensure_ascii=False), encoding="utf-8")
+
+    # 快照存档序列（兜底）：code -> [{d,name,risk,y,t}]
     hmap = {}
     if hist.exists():
         with hist.open(encoding="utf-8") as f:
@@ -163,30 +203,29 @@ def main():
                 hmap.setdefault(row["code"], []).append(
                     {"d": row["date"], "name": row["name"], "risk": row["risk"],
                      "y": row["yield_pct"], "t": row["yield_type"]})
-    history = {k: v[-90:] for k, v in hmap.items()}
-    (WEB / "history.json").write_text(json.dumps(history, ensure_ascii=False), encoding="utf-8")
 
-    # 市场概览序列：每个快照日 R1/R2 中位数收益
+    # 市场概览序列：基于官方历史，每个日期 R1/R2 中位数七日年化（无则净值日涨跌年化）
     import statistics
     by_date = {}
-    for rows in history.values():
-        for r in rows:
-            by_date.setdefault(r["d"], []).append(r)
+    risk_of_code = {p["code"]: p["risk"] for p in kept}
+    for code, rows in hist_api.items():
+        risk = risk_of_code.get(code)
+        navs = [r.get("nav") for r in rows]
+        for i, r in enumerate(rows):
+            v = r.get("s7") or None
+            if not v:
+                # 净值型：按 30/14/7 天自适应窗口的净值涨幅年化
+                for win in (30, 14, 7):
+                    if i >= win and navs[i] and navs[i - win]:
+                        v = round((navs[i] / navs[i - win] - 1.0) * 365.0 / win * 100.0, 3)
+                        break
+            if v:
+                by_date.setdefault(r["d"], {}).setdefault(risk, []).append(v)
     market = {"dates": [], "r1": [], "r2": []}
-    for d in sorted(by_date):
-        a1, a2 = [], []
-        for r in by_date[d]:
-            try:
-                y = float(r["y"].replace("%", ""))
-            except Exception:
-                continue
-            if r["risk"] == "R1":
-                a1.append(y)
-            elif r["risk"] == "R2":
-                a2.append(y)
+    for d in sorted(by_date)[-90:]:
         market["dates"].append(d)
-        market["r1"].append(round(statistics.median(a1), 3) if a1 else None)
-        market["r2"].append(round(statistics.median(a2), 3) if a2 else None)
+        market["r1"].append(round(statistics.median(by_date[d]["R1"]), 3) if by_date[d].get("R1") else None)
+        market["r2"].append(round(statistics.median(by_date[d]["R2"]), 3) if by_date[d].get("R2") else None)
 
     payload = {
         "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),

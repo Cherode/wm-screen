@@ -151,8 +151,9 @@
     loadHist(function(h){
       var rows = h[detCode]||[];
       rows = rows.slice(-detP);
-      var a = agg(rows.map(function(r){return r.d}), rows.map(function(r){ var f=parseFloat(r.y); return isNaN(f)?null:f; }), detG);
-      drawChart(el("detChart"), el("detPh"), a.labels, [{label:"收益率(年化%)",data:a.values}], "年化 %");
+      var useNav = !rows.some(function(r){return r.s7!=null && r.s7!==0;});
+      var a = agg(rows.map(function(r){return r.d}), rows.map(function(r){ var f = useNav? r.nav : (r.s7||null); return f==null? null : parseFloat(f); }), detG);
+      drawChart(el("detChart"), el("detPh"), a.labels, [{label: useNav? "单位净值":"七日年化(%)", data:a.values}], useNav? "净值":"年化 %");
     });
   }
   function chips(box, items, key){
