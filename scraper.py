@@ -349,50 +349,156 @@ def fetch_icbc_detail(prod_id):
         return {}
 
 
+RILE_MAP = (("00001", "R1"), ("00002", "R2"))
+
+
 def fetch_icbc():
-    """抓取工银理财全量产品，返回标准化列表
-    注意：ICBC searchList 接口不返回风险等级，需从产品名推断或标记为未知。
-    """
+    """工行官方移动端接口：按风险等级(rile)拉取 R1/R2 全量，含募集档期"""
     import time
-    sys.stderr.write("fetching ICBC product list...\n")
-    items = fetch_icbc_product_list()
-    sys.stderr.write("ICBC list: %d products\n" % len(items))
+    from datetime import date as _date
+    products, upcoming = [], []
+    today = _date.today()
+    for rile, risk in RILE_MAP:
+        sys.stderr.write("fetching ICBC rile=%s\n" % rile)
+        for page in range(1, 400):
+            try:
+                data = icbc_post(ICBC_LIST_URL, {"searchInfo": "", "curr": "", "term": "",
+                                                 "type": "", "rile": rile, "utty": "",
+                                                 "pageIndex": page, "pageSize": 20})
+            except Exception as e:
+                sys.stderr.write("warn: icbc page %d failed: %s\n" % (page, e))
+                break
+            resp = data.get("data") or {}
+            items = resp.get("list") or []
+            if not items:
+                break
+            for item in items:
+                pid = item.get("productId") or ""
+                if not pid:
+                    continue
+                term = item.get("productTerm") or ""
+                hold = parse_icbc_term_days(term)
+                yld, ytype = parse_icbc_yield(item.get("yieldValue"), item.get("yieldType"))
+                op = item.get("offerPeriod") or ""
+                is_off = item.get("isOfferPeriod")
+                rec = {
+                    "code": pid,
+                    "name": item.get("productName") or "",
+                    "issuer": extract_issuer_from_name(item.get("productName") or "") or "工银理财",
+                    "channel": "工商银行官方",
+                    "risk": risk,
+                    "yield_pct": yld,
+                    "yield_type": ytype,
+                    "holding_desc": term,
+                    "saa": "",
+                    "holding_days": hold,
+                    "min_buy": parse_icbc_min_buy(item.get("issuMin")),
+                    "note": "工行官方数据",
+                    "tags": [],
+                    "_src": "icbc",
+                    "offer_period": op,
+                }
+                if is_off and op and "-" in op:
+                    s0, e0 = op.split("-", 1)
+                    try:
+                        d0 = _date(int(s0[:4]), int(s0[4:6]), int(s0[6:8]))
+                        d1 = _date(int(e0[:4]), int(e0[4:6]), int(e0[6:8]))
+                    except Exception:
+                        d0 = d1 = None
+                    if d1 and d1 >= today:
+                        upcoming.append({
+                            "code": pid, "name": rec["name"], "issuer": rec["issuer"],
+                            "risk": risk,
+                            "sale_text": "募集期 %s~%s" % (s0, d1.strftime("%m-%d")) if d0 and d0 > today else "募集中 至%s" % e0[4:],
+                            "sale_date": d0.isoformat() if d0 and d0 > today else _date.today().isoformat(),
+                            "holding_desc": term, "min_buy": rec["min_buy"],
+                            "yield_pct": yld, "yield_type": ytype,
+                        })
+                        continue  # 募集中的不算在售入选
+                products.append(rec)
+            if page >= (resp.get("pages") or page):
+                break
+            time.sleep(0.1)
+    # 募集期/首发产品只在无筛选列表头部：扫前若干页直至连续2页无募集项
+    RILE2RISK = {"00001": "R1", "00002": "R2", "00003": "R3", "00004": "R4", "00005": "R5"}
+    dry = 0
+    for page in range(1, 15):
+        try:
+            data = icbc_post(ICBC_LIST_URL, {"searchInfo": "", "curr": "", "term": "",
+                                             "type": "", "rile": "", "utty": "",
+                                             "pageIndex": page, "pageSize": 20})
+        except Exception:
+            break
+        items = (data.get("data") or {}).get("list") or []
+        if not items:
+            break
+        got = 0
+        for item in items:
+            if not item.get("isOfferPeriod"):
+                continue
+            got += 1
+            pid = item.get("productId") or ""
+            op = item.get("offerPeriod") or ""
+            if not op or "-" not in op:
+                continue
+            s0, e0 = op.split("-", 1)
+            try:
+                d0 = _date(int(s0[:4]), int(s0[4:6]), int(s0[6:8]))
+                d1 = _date(int(e0[:4]), int(e0[4:6]), int(e0[6:8]))
+            except Exception:
+                continue
+            if d1 < today:
+                continue
+            risk = None
+            try:
+                det = icbc_post(ICBC_DETAIL_URL, {"keyword_objID": pid}).get("data") or {}
+                if isinstance(det, list):
+                    det = det[0] if det else {}
+                risk = RILE2RISK.get(str(det.get("lowestBuyLevel") or ""))
+            except Exception:
+                pass
+            yld, ytype = parse_icbc_yield(item.get("yieldValue"), item.get("yieldType"))
+            upcoming.append({
+                "code": pid, "name": item.get("productName") or "",
+                "issuer": extract_issuer_from_name(item.get("productName") or "") or "工银理财",
+                "risk": risk,
+                "kind": "offering" if d0 <= today else "upcoming",
+                "end_date": d1.isoformat(),
+                "sale_text": "募集期 %s~%s" % (d0.strftime("%m-%d"), d1.strftime("%m-%d")),
+                "sale_date": d0.isoformat(),
+                "holding_desc": item.get("productTerm") or "",
+                "min_buy": parse_icbc_min_buy(item.get("issuMin")),
+                "yield_pct": yld, "yield_type": ytype,
+            })
+        if got == 0:
+            dry += 1
+            if dry >= 2:
+                break
+        else:
+            dry = 0
+        time.sleep(0.1)
+    return products, upcoming
 
-    products = []
-    for i, item in enumerate(items):
-        pid = item.get("productId") or ""
-        name = item.get("productName") or ""
-        term = item.get("productTerm") or ""
-        hold_days = parse_icbc_term_days(term)
-        yield_pct, yield_type = parse_icbc_yield(
-            item.get("yieldValue"), item.get("yieldType"))
-        min_buy = parse_icbc_min_buy(item.get("issuMin"))
 
-        # 风险等级：列表接口不返回，尝试从名称推断
-        risk = parse_risk(name)
-        # 如果名称里没有风险标识，标记为 None（后续筛选时特殊处理）
-
-        products.append({
-            "code": pid,
-            "name": name,
-            "issuer": extract_issuer_from_name(name) or "工商银行",
-            "channel": "工商银行官方",
-            "risk": risk,
-            "yield_pct": yield_pct,
-            "yield_type": yield_type,
-            "holding_desc": term,
-            "saa": "",
-            "holding_days": hold_days,
-            "min_buy": min_buy,
-            "note": "工行官方数据（风险等级未披露）" if not risk else "",
-            "tags": [],
-            "_src": "icbc",
-        })
-
-        if (i + 1) % 200 == 0:
-            sys.stderr.write("ICBC parsed %d/%d\n" % (i + 1, len(items)))
-
-    return products
+def fetch_icbc_detail_extra(pid):
+    """工行详情：区间收益 + 周频净值历史"""
+    d = icbc_post(ICBC_DETAIL_URL, {"keyword_objID": pid}).get("data") or {}
+    if isinstance(d, list):
+        d = d[0] if d else {}
+    wins = {}
+    for y in (d.get("historicalYieldList") or []):
+        wins[y.get("timeInterval") or ""] = y.get("yeildValue") or ""
+    rows = []
+    for v in (d.get("historicalValueList") or []):
+        ds = (v.get("date") or "").replace(".", "-")
+        try:
+            nav = float(v.get("value"))
+        except Exception:
+            nav = None
+        if ds and nav:
+            rows.append({"d": ds, "nav": nav, "w": None, "s7": None})
+    rows.sort(key=lambda r: r["d"])
+    return wins, rows[-90:]
 
 
 def main():
@@ -422,11 +528,11 @@ def main():
     sys.stderr.write("CMB raw: %d\n" % len(raw))
 
     # ── 2. 工行官方渠道 ──
-    icbc_raw = []
+    icbc_raw, icbc_upcoming = [], []
     if os.environ.get("WM_NOICBC") != "1":
         try:
-            icbc_raw = fetch_icbc()
-            sys.stderr.write("ICBC raw: %d\n" % len(icbc_raw))
+            icbc_raw, icbc_upcoming = fetch_icbc()
+            sys.stderr.write("ICBC raw: %d, upcoming: %d\n" % (len(icbc_raw), len(icbc_upcoming)))
         except Exception as e:
             sys.stderr.write("warn: ICBC fetch failed: %s\n" % e)
     else:
@@ -453,7 +559,7 @@ def main():
     # ── 4. 筛选 R1/R2 + ≤30天 ──
     # ICBC 官方接口不返回风险等级，只要持有期满足就纳入（note 里标注了风险未披露）
     kept = [p for p in all_products
-            if (p["risk"] in RISK_KEEP or p.get("_src") == "icbc")
+            if p["risk"] in RISK_KEEP
             and p["holding_days"] is not None
             and p["holding_days"] <= MAX_HOLD_DAYS]
     sys.stderr.write("after filter (R1/R2 or ICBC) ≤30d: %d\n" % len(kept))
@@ -493,6 +599,10 @@ def main():
     upcoming = fetch_upcoming()
     for u in upcoming:
         u.update(fetch_trade_rules(u["code"], u.get("saa") or "D07"))
+        if not u.get("kind"):
+            u["kind"] = "offering" if (u.get("sale_date") or "9999") <= now.strftime("%Y-%m-%d") else "upcoming"
+    upcoming.extend(icbc_upcoming)
+    upcoming.sort(key=lambda u: (0 if u.get("kind") == "upcoming" else 1, u.get("sale_date") or "9999"))
 
     # 交易规则（购入/确认/赎回 T+X）
     if os.environ.get("WM_NODETAIL") != "1":
@@ -510,10 +620,17 @@ def main():
     elif os.environ.get("WM_NOHIST") != "1":
         for i, p in enumerate(kept):
             if p.get("_src") == "icbc":
-                continue  # ICBC 产品不走招行历史接口
-            rows = fetch_history(p["code"], p.get("saa"))
-            if rows:
-                hist_api[p["code"]] = rows
+                try:
+                    wins, rows = fetch_icbc_detail_extra(p["code"])
+                    p["win_yields"] = wins
+                    if rows:
+                        hist_api[p["code"]] = rows
+                except Exception as e:
+                    sys.stderr.write("warn: icbc detail %s: %s\n" % (p["code"], e))
+            else:
+                rows = fetch_history(p["code"], p.get("saa"))
+                if rows:
+                    hist_api[p["code"]] = rows
             if (i + 1) % 60 == 0:
                 sys.stderr.write("history %d/%d\n" % (i + 1, len(kept)))
     (WEB / "history.json").write_text(json.dumps(hist_api, ensure_ascii=False), encoding="utf-8")

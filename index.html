@@ -215,7 +215,7 @@
     detCode=p.code;
     el("dName").textContent=p.name+"  "+p.yield_pct;
     el("dSub").textContent=p.code+" · "+p.issuer+" · "+(p.risk||"风险未披露")+" · "+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+" · "+p.holding_desc;
-    el("dInfo").innerHTML='<div class="ln"><span>收益口径</span><b>'+p.yield_type+'</b></div>'+(p.buy_rule?'<div class="ln"><span>购买时间</span><b>'+p.buy_rule+'</b></div>':'')+(p.confirm_rule?'<div class="ln"><span>确认份额</span><b>'+p.confirm_rule+'</b></div>':'')+(p.redeem_rule?'<div class="ln"><span>赎回到账</span><b>'+p.redeem_rule+'</b></div>':'')+(p.fees?'<div class="ln"><span>费用</span><b>'+p.fees+'</b></div>':'')+'<div class="ln"><span>起购/说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+" · "+p.note+'</b></div>'+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'');
+    el("dInfo").innerHTML='<div class="ln"><span>收益口径</span><b>'+p.yield_type+'</b></div>'+(p.buy_rule?'<div class="ln"><span>购买时间</span><b>'+p.buy_rule+'</b></div>':'')+(p.confirm_rule?'<div class="ln"><span>确认份额</span><b>'+p.confirm_rule+'</b></div>':'')+(p.redeem_rule?'<div class="ln"><span>赎回到账</span><b>'+p.redeem_rule+'</b></div>':'')+(p.fees?'<div class="ln"><span>费用</span><b>'+p.fees+'</b></div>':'')+(p.win_yields&&Object.keys(p.win_yields).length?'<div class="ln"><span>区间年化</span><b>'+Object.keys(p.win_yields).slice(0,4).map(function(k){return k+" "+p.win_yields[k]}).join(" · ")+'</b></div>':'')+'<div class="ln"><span>起购/说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+" · "+p.note+'</b></div>'+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'');
     el("sheet").classList.add("on");
     renderDet();
   }
@@ -264,13 +264,13 @@
     window._list=list;
   }
   function renderUp(){
-    var up = (DATA.upcoming||[]).slice().sort(function(a,b){ return (a.sale_date||"9999")<(b.sale_date||"9999")?-1:1; });
+    var up = (DATA.upcoming||[]).slice().sort(function(a,b){ var ka=(a.kind==="upcoming"?0:1), kb=(b.kind==="upcoming"?0:1); return ka!==kb? ka-kb : ((a.sale_date||"9999")<(b.sale_date||"9999")?-1:1); });
     if(!up.length){ el("upPanel").style.display="none"; return; }
     el("upPanel").style.display="";
     var today = new Date(); today.setHours(0,0,0,0);
     el("upList").innerHTML = up.slice(0,8).map(function(u){
       var days="";
-      if(u.sale_date){ var d=new Date(u.sale_date+"T00:00:00"); var df=Math.round((d-today)/86400000); days = df===0?"今天开售":df>0?df+"天后开售":"已开售"; }
+      if(u.sale_date){ var d=new Date(u.sale_date+"T00:00:00"); var df=Math.round((d-today)/86400000); days = df===0?"今天开售":df>0?df+"天后开售":"募集中"; }
       return '<div class="ln"><span><b style="color:var(--ink)">'+u.name+'</b> <span class="bd '+String(u.risk||"").toLowerCase()+'" style="margin-left:4px">'+(u.risk||"—")+'</span> <span class="bd is">'+u.issuer+'</span></span><b>'+u.sale_text+(days?" · "+days:"")+' · '+u.holding_desc+'</b></div>';
     }).join("");
   }
