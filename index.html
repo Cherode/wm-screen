@@ -122,6 +122,7 @@
 <script>document.write('<script src="data.js?t='+Date.now()+'"><\/script>');</script>
 <script>
 (function(){
+  var UI_VER = 3;
   var DATA = window.WM_DATA || {products:[], generated_at:"无数据", market:{dates:[],r1:[],r2:[]}};
   var HIST = null;
   var REFRESH_MS = 30*60*1000;
@@ -303,7 +304,7 @@
   function stamp(){ el("stamp").textContent="数据截至 "+DATA.generated_at+" · 共 "+DATA.count_kept+" 只（原始 "+DATA.count_total_raw+" 只）"; }
   function load(){
     if(location.protocol==="http:"||location.protocol==="https:"){
-      fetch("data.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.json()}).then(function(j){ DATA=j; window.WM_DATA=j; HIST=null; renderChips(); render(); renderSummary(); stamp(); renderMkt(); renderUp(); }).catch(function(){});
+      fetch("data.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.json()}).then(function(j){ DATA=j; window.WM_DATA=j; HIST=null; if (j.ui_ver && j.ui_ver!==UI_VER && !sessionStorage.getItem('uir'+j.ui_ver)) { sessionStorage.setItem('uir'+j.ui_ver,'1'); location.replace(location.pathname+'?rv='+Date.now()); return; } renderChips(); render(); renderSummary(); stamp(); renderMkt(); renderUp(); }).catch(function(){});
     } else { renderChips(); render(); renderSummary(); stamp(); renderMkt(); renderUp(); }
   }
   var lastTick=Date.now();

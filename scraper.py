@@ -843,6 +843,7 @@ def main():
         "products": kept,
         "market": market,
         "upcoming": upcoming,
+        "ui_ver": 3,
     }
     (WEB / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     (WEB / "data.js").write_text("window.WM_DATA = " + json.dumps(payload, ensure_ascii=False) + ";", encoding="utf-8")
