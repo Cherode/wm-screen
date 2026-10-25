@@ -149,6 +149,42 @@ def fetch_upcoming():
     return out
 
 
+def _ylab(t):
+    t = (t or "").replace("年化", "").replace("收益", "").strip()
+    t = t.replace("近一", "近1").replace("近三", "近3").replace("近六", "近6").replace("近七", "近7").replace("七日", "7日")
+    for k, v in (("7日", "7日"), ("近1月", "近1月"), ("近3月", "近3月"),
+                 ("近6月", "近6月"), ("近1年", "近1年"), ("成立以来", "成立以来")):
+        if k in t:
+            return v
+    return t or "展示"
+
+
+def _yval(v):
+    try:
+        return float(str(v).replace("%", "").strip())
+    except Exception:
+        return None
+
+
+def build_yields(p):
+    """汇总多口径收益 → yields dict + 主/副显示位 y1/y2"""
+    y = dict(p.get("yields") or {})
+    base_lab = _ylab(p.get("yield_type"))
+    if p.get("yield_pct"):
+        y.setdefault(base_lab, p["yield_pct"])
+    p["yields"] = y
+    order1 = ["近1月", "7日", "近3月", "成立以来", "近1年"]
+    order2 = ["成立以来", "近1年", "近3月", "7日", "近1月"]
+    k1 = next((k for k in order1 if y.get(k)), None)
+    k2 = next((k for k in order2 if k != k1 and y.get(k)), None)
+    p["y1"] = _yval(y.get(k1)) if k1 else _yval(p.get("yield_pct"))
+    p["y1_label"] = k1 or p.get("yield_type")
+    p["y1_disp"] = y.get(k1) or p.get("yield_pct")
+    p["y2"] = _yval(y.get(k2)) if k2 else None
+    p["y2_label"] = k2
+    p["y2_disp"] = y.get(k2)
+
+
 def parse_confirm_tx(note, confirm_rule):
     """购入确认 T+X：优先文案口径，其次从确认规则的两个日期算工作日差"""
     note = note or ""
@@ -188,12 +224,20 @@ def fetch_trade_rules(code, saa):
     m = _re.search(r"T\s*\+\s*(\d+)", pay)
     redeem_tx = int(m.group(1)) if m else None
     tips = ((d.get("timeLineData") or {}).get("confirmDayTips")) or ""
+    yields = {}
+    rn, rt = d.get("rateName"), re.sub(r"<[^>]+>", "", d.get("rateText") or "")
+    if rn and rt:
+        yields[_ylab(rn)] = rt
+    for r in (d.get("rateList") or []):
+        if r.get("zRatVal"):
+            yields[_ylab(r.get("zRatExp"))] = r.get("zRatVal")
     return {
         "buy_rule": d.get("buyTimeRule") or "",
         "confirm_rule": d.get("confirmTimeRule") or tips,
         "redeem_rule": pay,
         "redeem_tx": redeem_tx,
         "fees": " / ".join(x for x in [d.get("buyFeeRule"), d.get("redeemFeeRule")] if x),
+        "yields": yields,
     }
 
 
@@ -654,11 +698,11 @@ def main():
             and p["holding_days"] <= MAX_HOLD_DAYS]
     sys.stderr.write("after filter (R1/R2 or ICBC) ≤30d: %d\n" % len(kept))
 
+    for p in kept:
+        build_yields(p)
+
     def yv(p):
-        try:
-            return float(p["yield_pct"].replace("%", ""))
-        except Exception:
-            return -1.0
+        return p.get("y1") if p.get("y1") is not None else -1.0
     # 置顶银行优先（按 PRIORITY_BANKS 顺序），其余按收益率降序
     priority = [p for p in kept if p["issuer"] in PRIORITY_BANKS]
     priority.sort(key=lambda p: (PRIORITY_BANKS.index(p["issuer"]), -yv(p)))
@@ -732,6 +776,7 @@ def main():
                 try:
                     wins, rows = fetch_icbc_detail_extra(p["code"])
                     p["win_yields"] = wins
+                    p.setdefault("yields", {}).update({_ylab(k): v for k, v in (wins or {}).items() if v})
                     if rows:
                         hist_api[p["code"]] = rows
                 except Exception as e:
@@ -743,6 +788,15 @@ def main():
             if (i + 1) % 60 == 0:
                 sys.stderr.write("history %d/%d\n" % (i + 1, len(kept)))
     (WEB / "history.json").write_text(json.dumps(hist_api, ensure_ascii=False), encoding="utf-8")
+
+    # 收益多口径汇总与排序（在 rules/ICBC detail/BOC 合并之后重算）
+    for p in kept:
+        build_yields(p)
+    priority = [p for p in kept if p["issuer"] in PRIORITY_BANKS]
+    priority.sort(key=lambda p: (PRIORITY_BANKS.index(p["issuer"]), -yv(p)))
+    others = [p for p in kept if p["issuer"] not in PRIORITY_BANKS]
+    others.sort(key=yv, reverse=True)
+    kept = priority + others
 
     # 快照存档序列（兜底）：code -> [{d,name,risk,y,t}]
     hmap = {}
