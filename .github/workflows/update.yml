@@ -1,8 +1,6 @@
 name: update-data
 on:
-  schedule:
-    - cron: "10 0 * * *"   # 每天 08:10 北京时间
-  workflow_dispatch:
+  workflow_dispatch:   # 数据由本机定时任务抓取并推送，此处仅保留手动触发
 permissions:
   contents: write
 jobs:
