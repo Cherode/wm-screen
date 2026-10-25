@@ -149,6 +149,33 @@ def fetch_upcoming():
     return out
 
 
+def parse_confirm_tx(note, confirm_rule):
+    """购入确认 T+X：优先文案口径，其次从确认规则的两个日期算工作日差"""
+    note = note or ""
+    if "下个工作日享收益" in note or "下一个工作日享收益" in note or "次工作日确认" in note:
+        return 1
+    if "购买当日享收益" in note or "当日确认" in note or "实时确认" in note:
+        return 0
+    dates = re.findall(r"(\d{1,2})月(\d{1,2})日", confirm_rule or "")
+    if len(dates) >= 2:
+        from datetime import date as _dd, timedelta as _td
+        y = _dd.today().year
+        try:
+            d1 = _dd(y, int(dates[-2][0]), int(dates[-2][1]))
+            d2 = _dd(y, int(dates[-1][0]), int(dates[-1][1]))
+            if d2 < d1:
+                d1 = _dd(y + 1, int(dates[-2][0]), int(dates[-2][1]))
+            x, cur = 0, d1
+            while cur < d2:
+                cur += _td(days=1)
+                if cur.weekday() < 5:
+                    x += 1
+            return x if 0 <= x <= 15 else None
+        except Exception:
+            return None
+    return None
+
+
 def fetch_trade_rules(code, saa):
     """prd-info：购入/确认/赎回到账 T+X 与费用规则"""
     import re as _re
@@ -575,6 +602,10 @@ def main():
     others = [p for p in kept if p["issuer"] not in PRIORITY_BANKS]
     others.sort(key=yv, reverse=True)
     kept = priority + others
+
+    for p in kept:
+        if p.get("confirm_tx") is None:
+            p["confirm_tx"] = parse_confirm_tx(p.get("note"), p.get("confirm_rule"))
 
     # 与上一次快照对比收益变化
     prev = {}

@@ -22,6 +22,7 @@
   .bar{position:sticky;top:0;z-index:8;background:var(--bg);padding:10px 12px 6px;border-bottom:1px solid var(--line)}
   .row{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none}
   .row::-webkit-scrollbar{display:none}
+  .rl{flex:none;font-size:11px;color:var(--sub);padding:4px 2px 4px 0;letter-spacing:.5px}
   .chip{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px;font-size:12px;color:var(--sub)}
   .chip.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
   .search{width:100%;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;background:#fff;margin-bottom:8px}
@@ -79,6 +80,7 @@
   <div class="row" id="f-issuer"></div>
   <div class="row" id="f-risk"></div>
   <div class="row" id="f-hold"></div>
+  <div class="row" id="f-ctx"></div>
   <div class="row" id="f-tx"></div>
 </div>
 <main>
@@ -123,7 +125,7 @@
   var DATA = window.WM_DATA || {products:[], generated_at:"无数据", market:{dates:[],r1:[],r2:[]}};
   var HIST = null;
   var REFRESH_MS = 30*60*1000;
-  var state = {issuer:"全部", risk:"全部", hold:"全部", tx:"全部", q:""};
+  var state = {issuer:"全部", risk:"全部", hold:"全部", ctx:"全部", tx:"全部", q:""};
   var mktG = "d", detG = "d", detP = 30, detCode = null;
   var mktChart = null, detChart = null;
   function el(id){return document.getElementById(id)}
@@ -230,15 +232,25 @@
       drawChart(el("detChart"), el("detPh"), a.labels, [{label: useNav? "单位净值":"七日年化(%)", data:a.values}], useNav? "净值":"年化 %");
     });
   }
-  function chips(box, items, key){
-    el(box).innerHTML = items.map(function(v){ return '<span class="chip'+(state[key]===v?' on':'')+'" data-k="'+key+'" data-v="'+v+'">'+v+'</span>'; }).join("");
+  function chips(box, items, key, label){
+    el(box).innerHTML = (label?'<span class="rl">'+label+'</span>':'') + items.map(function(v){ return '<span class="chip'+(state[key]===v?' on':'')+'" data-k="'+key+'" data-v="'+v+'">'+v+'</span>'; }).join("");
   }
   function renderChips(){
     var issuers=["全部"]; DATA.products.forEach(function(p){ if(issuers.indexOf(p.issuer)<0) issuers.push(p.issuer); });
-    chips("f-issuer", issuers, "issuer");
-    chips("f-risk", ["全部","R1","R2"], "risk");
-    chips("f-hold", ["全部","每日可赎","≤7天","≤14天","≤30天"], "hold");
-    chips("f-tx", ["全部","T+0","T+1","T+2","T+3+"], "tx");
+    chips("f-issuer", issuers, "issuer", "发行方");
+    chips("f-risk", ["全部","R1","R2"], "risk", "风险");
+    chips("f-hold", ["全部","每日可赎","≤7天","≤14天","≤30天"], "hold", "持有期");
+    chips("f-ctx", ["全部","T+0","T+1","T+2+"], "ctx", "购入确认");
+    chips("f-tx", ["全部","T+0","T+1","T+2","T+3+"], "tx", "赎回到账");
+  }
+  function ctxMatch(p){
+    if(state.ctx==="全部") return true;
+    var t=p.confirm_tx;
+    if(t===null||t===undefined) return false;
+    if(state.ctx==="T+0") return t===0;
+    if(state.ctx==="T+1") return t===1;
+    if(state.ctx==="T+2+") return t>=2;
+    return true;
   }
   function txMatch(p){
     if(state.tx==="全部") return true;
@@ -260,7 +272,7 @@
   }
   function render(){
     var list = DATA.products.filter(function(p){
-      return (state.issuer==="全部"||p.issuer===state.issuer)&&(state.risk==="全部"||p.risk===state.risk)&&holdMatch(p)&&txMatch(p)&&(!state.q||(p.name+p.code+p.issuer).toLowerCase().indexOf(state.q.toLowerCase())>=0);
+      return (state.issuer==="全部"||p.issuer===state.issuer)&&(state.risk==="全部"||p.risk===state.risk)&&holdMatch(p)&&ctxMatch(p)&&txMatch(p)&&(!state.q||(p.name+p.code+p.issuer).toLowerCase().indexOf(state.q.toLowerCase())>=0);
     }).sort(function(a,b){
       var pa=["工商银行","招商银行"], ia=pa.indexOf(a.issuer), ib=pa.indexOf(b.issuer);
       if(ia>=0&&ib>=0) return ia!==ib ? ia-ib : yv(b)-yv(a);
@@ -272,7 +284,7 @@
       var d="";
       if(p.prev_yield_pct&&p.prev_yield_pct!==p.yield_pct){ var df=(yv(p)-parseFloat(p.prev_yield_pct)).toFixed(2); d=df>0?'<span class="delta up">↑'+df+'</span>':df<0?'<span class="delta dn">↓'+Math.abs(df)+'</span>':'<span class="delta fl">＝</span>'; }
       return '<div class="card" data-i="'+i+'"><div class="t1"><div><div class="nm">'+p.name+'</div><div class="cd">'+p.code+' · '+p.channel+'</div></div><div class="yld"><b>'+p.yield_pct+'</b><span>'+p.yield_type+' '+d+'</span></div></div><div class="badges"><span class="bd '+(p.risk?p.risk.toLowerCase():"hd")+'">'+(p.risk||"风险未披露")+'</span><span class="bd is">'+p.issuer+'</span><span class="bd hd">'+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+'</span></div><div class="ln"><span>赎回规则</span><b>'+p.holding_desc+'</b></div><div class="ln"><span>起购 / 说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+' · '+p.note+'</b></div>'
-      +(p.redeem_tx!=null||p.fees?'<div class="ln"><span>购入 / 赎回</span><b>'+(p.redeem_tx!=null?"赎回到账T+"+p.redeem_tx:"见详情")+(p.fees?" · "+p.fees:"")+'</b></div>':'')+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'')+'</div>';
+      +(p.redeem_tx!=null||p.confirm_tx!=null||p.fees?'<div class="ln"><span>购入 / 赎回</span><b>'+(p.confirm_tx!=null?"购入确认T+"+p.confirm_tx:"购入见详情")+" · "+(p.redeem_tx!=null?"赎回到账T+"+p.redeem_tx:"赎回见详情")+(p.fees?" · "+p.fees:"")+'</b></div>':'')+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'')+'</div>';
     }).join("") : '<div class="empty">没有符合筛选条件的产品</div>';
     window._list=list;
   }
