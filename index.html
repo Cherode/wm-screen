@@ -116,7 +116,7 @@
 <footer>
   <div style="margin-bottom:2px">T+X＝申请日（工作日15:30前为当日）后第X个工作日：赎回=资金到账、购入=份额确认/起息；节假日顺延。</div>
   <div id="footer-content" style="line-height:1.6">
-    数据来源：<a id="source-link" href="https://mobile.cmbchina.com/IEntrustFinance/financeproduct/financelist.html?PrdTyp=B" target="_blank" style="color:#0b3b8c">招商银行APP代销理财公开接口</a> · 仅供参考，不构成投资建议<br>理财非存款，产品有风险，投资需谨慎
+    数据来源：<a id="source-link" href="https://mobile.cmbchina.com/IEntrustFinance/financeproduct/financelist.html?PrdTyp=B" target="_blank" style="color:#0b3b8c">招商银行APP代销理财公开接口</a> · 中国银行代销净值表 · 工商银行官方 · 仅供参考，不构成投资建议<br>理财非存款，产品有风险，投资需谨慎
   </div>
 </footer>
 <script>document.write('<script src="data.js?t='+Date.now()+'"><\/script>');</script>
@@ -200,7 +200,7 @@
 
     // 数据来源说明
     html += '<div style="margin-top:10px;padding:8px 10px;background:#f9fafb;border-radius:8px;font-size:11px;color:#667085;line-height:1.6">';
-    html += '📋 <b>数据来源</b>：<a href="'+(DATA.source_url||'https://mobile.cmbchina.com/IEntrustFinance/financeproduct/financelist.html?PrdTyp=B')+'" target="_blank" style="color:#0b3b8c">招商银行APP代销理财公开接口</a>';
+    html += '📋 <b>数据来源</b>：<a href="'+(DATA.source_url||'https://mobile.cmbchina.com/IEntrustFinance/financeproduct/financelist.html?PrdTyp=B')+'" target="_blank" style="color:#0b3b8c">招商银行APP代销理财公开接口</a> · 中国银行代销净值表 · 工商银行官方';
     html += '，收益率等数据由各银行理财子公司官方披露。';
     if(DATA.disclaimer) html += '<br>⚠️ '+DATA.disclaimer;
     html += '</div>';
@@ -219,7 +219,7 @@
     detCode=p.code;
     el("dName").textContent=p.name+"  "+p.yield_pct;
     el("dSub").textContent=p.code+" · "+p.issuer+" · "+(p.risk||"风险未披露")+" · "+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+" · "+p.holding_desc;
-    el("dInfo").innerHTML='<div class="ln"><span>收益口径</span><b>'+p.yield_type+'</b></div>'+(p.buy_rule?'<div class="ln"><span>购买时间</span><b>'+p.buy_rule+'</b></div>':'')+(p.confirm_rule?'<div class="ln"><span>确认份额</span><b>'+p.confirm_rule+'</b></div>':'')+(p.redeem_rule?'<div class="ln"><span>赎回到账</span><b>'+p.redeem_rule+'</b></div>':'')+(p.fees?'<div class="ln"><span>费用</span><b>'+p.fees+'</b></div>':'')+(p.win_yields&&Object.keys(p.win_yields).length?'<div class="ln"><span>区间年化</span><b>'+Object.keys(p.win_yields).slice(0,4).map(function(k){return k+" "+p.win_yields[k]}).join(" · ")+'</b></div>':'')+'<div class="ln"><span>起购/说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+" · "+p.note+'</b></div>'+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'');
+    el("dInfo").innerHTML='<div class="ln"><span>收益口径</span><b>'+p.yield_type+'</b></div>'+(p.buy_rule?'<div class="ln"><span>购买时间</span><b>'+p.buy_rule+'</b></div>':'')+(p.confirm_rule?'<div class="ln"><span>确认份额</span><b>'+p.confirm_rule+'</b></div>':'')+(p.redeem_rule?'<div class="ln"><span>赎回到账</span><b>'+p.redeem_rule+'</b></div>':'')+(p.fees?'<div class="ln"><span>费用</span><b>'+p.fees+'</b></div>':'')+(p.boc_nav!=null?'<div class="ln"><span>中行官方净值</span><b>'+p.boc_nav+'（截至'+String(p.boc_date).slice(5)+'）'+(p.boc_7d?' · 七日年化'+p.boc_7d+'%':'')+(p.boc_7d&&String(p.yield_type).indexOf('7日')>=0?' · 与渠道口径差'+(p.boc_7d-parseFloat(p.yield_pct)).toFixed(2)+'pp（披露日不同）':'')+'</b></div>':'')+(p.win_yields&&Object.keys(p.win_yields).length?'<div class="ln"><span>区间年化</span><b>'+Object.keys(p.win_yields).slice(0,4).map(function(k){return k+" "+p.win_yields[k]}).join(" · ")+'</b></div>':'')+'<div class="ln"><span>起购/说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+" · "+p.note+'</b></div>'+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'');
     el("sheet").classList.add("on");
     renderDet();
   }
@@ -284,7 +284,8 @@
       var d="";
       if(p.prev_yield_pct&&p.prev_yield_pct!==p.yield_pct){ var df=(yv(p)-parseFloat(p.prev_yield_pct)).toFixed(2); d=df>0?'<span class="delta up">↑'+df+'</span>':df<0?'<span class="delta dn">↓'+Math.abs(df)+'</span>':'<span class="delta fl">＝</span>'; }
       return '<div class="card" data-i="'+i+'"><div class="t1"><div><div class="nm">'+p.name+'</div><div class="cd">'+p.code+' · '+p.channel+'</div></div><div class="yld"><b>'+p.yield_pct+'</b><span>'+p.yield_type+' '+d+'</span></div></div><div class="badges"><span class="bd '+(p.risk?p.risk.toLowerCase():"hd")+'">'+(p.risk||"风险未披露")+'</span><span class="bd is">'+p.issuer+'</span><span class="bd hd">'+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+'</span></div><div class="ln"><span>赎回规则</span><b>'+p.holding_desc+'</b></div><div class="ln"><span>起购 / 说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+' · '+p.note+'</b></div>'
-      +(p.redeem_tx!=null||p.confirm_tx!=null||p.fees?'<div class="ln"><span>购入 / 赎回</span><b>'+(p.confirm_tx!=null?"购入确认T+"+p.confirm_tx:"购入见详情")+" · "+(p.redeem_tx!=null?"赎回到账T+"+p.redeem_tx:"赎回见详情")+(p.fees?" · "+p.fees:"")+'</b></div>':'')+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'')+'</div>';
+      +(p.redeem_tx!=null||p.confirm_tx!=null||p.fees?'<div class="ln"><span>购入 / 赎回</span><b>'+(p.confirm_tx!=null?"购入确认T+"+p.confirm_tx:"购入见详情")+" · "+(p.redeem_tx!=null?"赎回到账T+"+p.redeem_tx:"赎回见详情")+(p.fees?" · "+p.fees:"")+'</b></div>':'')
+      +(p.boc_nav!=null?'<div class="ln"><span>中行官方净值</span><b>'+p.boc_nav+'（截至'+String(p.boc_date).slice(5)+'）'+(p.boc_7d?' · 七日年化'+p.boc_7d+'%':'')+'</b></div>':'')+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'')+'</div>';
     }).join("") : '<div class="empty">没有符合筛选条件的产品</div>';
     window._list=list;
   }

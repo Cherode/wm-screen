@@ -379,6 +379,69 @@ def fetch_icbc_detail(prod_id):
 RILE_MAP = (("00001", "R1"), ("00002", "R2"))
 
 
+BOC_PAGES = ["https://www.bankofchina.com/sourcedb/srfd6_2024/index.html",
+             "https://www.bankofchina.com/sourcedb/srfd6_2024/index_1.html"]
+
+
+def _norm_name(n):
+    import re as _r
+    n = _r.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", n or "")
+    for pre in ("机构专属", "中银理财", "中银"):
+        if n.startswith(pre):
+            n = n[len(pre):]
+    return n
+
+
+def fetch_boc(max_pages=80):
+    """中行代销净值表：只扫最新截止日期的页，返回 规范名 -> 行信息"""
+    import re as _r
+    import urllib.request
+    out = {}
+    latest = None
+    url = BOC_PAGES[0]
+    for pg in range(max_pages):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            html = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "ignore")
+        except Exception as e:
+            sys.stderr.write("warn: boc page %s failed: %s\n" % (url, e))
+            break
+        rows = _r.findall(r"<tr[^>]*>(.*?)</tr>", html, _r.S)
+        parsed = []
+        for r in rows:
+            cells = [_r.sub(r"<[^>]+>", "", c).strip() for c in _r.findall(r"<td[^>]*>(.*?)</td>", r, _r.S)]
+            if len(cells) < 8 or not cells[0] or not _r.match(r"\d{4}/\d{2}/\d{2}", cells[7] or ""):
+                continue
+            parsed.append((cells, cells[7][:10]))
+        if not parsed:
+            break
+        page_max = max(d for _, d in parsed)
+        if latest is None:
+            latest = page_max
+        # 只扫最近10天披露窗口：每产品首次出现即其最新净值
+        if page_max < latest and (int(latest[8:10]) - int(page_max[8:10]) > 10 or page_max < latest[:8] + "01"):
+            break
+        got = 0
+        for cells, date in parsed:
+            if _norm_name(cells[1]) in out:
+                continue
+            def f(x):
+                try:
+                    return float(x)
+                except Exception:
+                    return None
+            out[_norm_name(cells[1])] = {
+                "boc_code": cells[0], "boc_name": cells[1], "boc_nav": f(cells[2]),
+                "boc_wan": f(cells[4]), "boc_7d": f(cells[5]), "boc_growth": f(cells[6]),
+                "boc_date": date,
+            }
+            got += 1
+        if got == 0:
+            break
+        url = "https://www.bankofchina.com/sourcedb/srfd6_2024/index_%d.html" % (pg + 1)
+    return out
+
+
 def fetch_icbc():
     """工行官方移动端接口：按风险等级(rile)拉取 R1/R2 全量，含募集档期"""
     import time
@@ -602,6 +665,21 @@ def main():
     others = [p for p in kept if p["issuer"] not in PRIORITY_BANKS]
     others.sort(key=yv, reverse=True)
     kept = priority + others
+
+    # ── 中行代销净值表：交叉校验 + 净值截止日 ──
+    boc = {}
+    try:
+        boc = fetch_boc()
+        sys.stderr.write("BOC latest-date rows: %d\n" % len(boc))
+    except Exception as e:
+        sys.stderr.write("warn: BOC fetch failed: %s\n" % e)
+    boc_hit = 0
+    for p in kept:
+        info = boc.get(_norm_name(p["name"]))
+        if info:
+            p.update(info)
+            boc_hit += 1
+    sys.stderr.write("BOC matched: %d/%d\n" % (boc_hit, len(kept)))
 
     for p in kept:
         if p.get("confirm_tx") is None:
