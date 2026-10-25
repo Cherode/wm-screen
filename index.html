@@ -2,6 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b3b8c">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -78,6 +81,14 @@
   <div class="row" id="f-hold"></div>
 </div>
 <main>
+  <div class="panel" id="summary-panel" style="display:none">
+    <h2 style="color:#0b3b8c">📊 近期优选推荐</h2>
+    <div id="summary-content" style="font-size:13px;line-height:1.8;color:#344050"></div>
+  </div>
+  <div class="panel" id="upPanel" style="display:none">
+    <h2>即将首发预览（募集档期）</h2>
+    <div id="upList"></div>
+  </div>
   <div class="panel">
     <h2>市场中位收益走势（R1 / R2 短钱池）
       <span class="seg" id="seg-mkt"><span data-g="d" class="on">日</span><span data-g="w">周</span><span data-g="m">月</span></span>
@@ -99,8 +110,12 @@
     <div id="dInfo" style="margin-top:10px"></div>
   </div>
 </div>
-<footer>数据来自银行公开披露（招商银行APP代销列表），仅供参考，不构成投资建议。理财非存款，产品有风险。</footer>
-<script src="data.js"></script>
+<footer>
+  <div id="footer-content" style="line-height:1.6">
+    数据来源：<a id="source-link" href="https://mobile.cmbchina.com/IEntrustFinance/financeproduct/financelist.html?PrdTyp=B" target="_blank" style="color:#0b3b8c">招商银行APP代销理财公开接口</a> · 仅供参考，不构成投资建议<br>理财非存款，产品有风险，投资需谨慎
+  </div>
+</footer>
+<script>document.write('<script src="data.js?t='+Date.now()+'"><\/script>');</script>
 <script>
 (function(){
   var DATA = window.WM_DATA || {products:[], generated_at:"无数据", market:{dates:[],r1:[],r2:[]}};
@@ -134,6 +149,63 @@
     var a = agg(m.dates,m.r1,mktG), b = agg(m.dates,m.r2,mktG);
     drawChart(el("mktChart"), el("mktPh"), a.labels, [{label:"R1 中位",data:a.values},{label:"R2 中位",data:b.values}], "年化 %");
   }
+  function renderSummary(){
+    var products = DATA.products || [];
+    if(!products.length) return;
+    // 按银行分组，取每家最高收益产品
+    var bankMap = {};
+    products.forEach(function(p){
+      if(!bankMap[p.issuer]) bankMap[p.issuer] = [];
+      bankMap[p.issuer].push(p);
+    });
+    var bankBest = Object.keys(bankMap).map(function(bank){
+      var best = bankMap[bank].slice().sort(function(a,b){return yv(b)-yv(a)})[0];
+      return {bank:bank, best:best, count:bankMap[bank].length, avgYield: bankMap[bank].reduce(function(s,p){return s+yv(p)},0)/bankMap[bank].length};
+    }).sort(function(a,b){return yv(b.best)-yv(a.best)});
+
+    var priorityBanks = ["工商银行","招商银行"];
+    var html = '<div style="margin-bottom:10px;padding:10px 12px;background:#f0f5ff;border-radius:10px;border-left:3px solid #0b3b8c">';
+    html += '<div style="font-weight:700;font-size:14px;margin-bottom:6px;color:#0b3b8c">🏦 重点银行速览</div>';
+    priorityBanks.forEach(function(bank){
+      var info = bankMap[bank];
+      if(!info || !info.length) return;
+      var top = info.slice().sort(function(a,b){return yv(b)-yv(a)})[0];
+      var top2 = info.length>1 ? info.slice().sort(function(a,b){return yv(b)-yv(a)})[1] : null;
+      html += '<div style="margin-bottom:6px"><b>'+bank+'</b>（共'+info.length+'款）：';
+      html += '<span style="color:#c0392b;font-weight:700">'+top.name+' '+top.yield_pct+'</span>';
+      html += '<span style="color:#667085;font-size:11px">（'+top.yield_type+'，'+top.holding_desc+'）</span>';
+      if(top2){
+        html += '、<span style="color:#c0392b;font-weight:700">'+top2.name+' '+top2.yield_pct+'</span>';
+        html += '<span style="color:#667085;font-size:11px">（'+top2.yield_type+'，'+top2.holding_desc+'）</span>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // 全市场 Top 3
+    html += '<div style="margin-bottom:8px;font-weight:700;font-size:13px">🔥 全市场收益 Top 3</div>';
+    var sorted = products.slice().sort(function(a,b){return yv(b)-yv(a)});
+    for(var i=0;i<Math.min(3,sorted.length);i++){
+      var p=sorted[i];
+      html += '<div style="padding:4px 0;border-bottom:1px dashed #e6e8ec">';
+      html += '<span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;background:#0b3b8c;color:#fff;font-size:11px;font-weight:700;margin-right:6px">'+(i+1)+'</span>';
+      html += '<b>'+p.name+'</b> · '+p.issuer+' · <span style="color:#c0392b;font-weight:700">'+p.yield_pct+'</span>';
+      html += '<span style="color:#667085;font-size:11px">（'+p.yield_type+'，'+p.holding_desc+'）</span>';
+      html += '</div>';
+    }
+
+    // 数据来源说明
+    html += '<div style="margin-top:10px;padding:8px 10px;background:#f9fafb;border-radius:8px;font-size:11px;color:#667085;line-height:1.6">';
+    html += '📋 <b>数据来源</b>：<a href="'+(DATA.source_url||'https://mobile.cmbchina.com/IEntrustFinance/financeproduct/financelist.html?PrdTyp=B')+'" target="_blank" style="color:#0b3b8c">招商银行APP代销理财公开接口</a>';
+    html += '，收益率等数据由各银行理财子公司官方披露。';
+    if(DATA.disclaimer) html += '<br>⚠️ '+DATA.disclaimer;
+    html += '</div>';
+
+    el("summary-content").innerHTML = html;
+    el("summary-panel").style.display = "block";
+    // 更新 footer source link
+    if(DATA.source_url){ var sl=el("source-link"); if(sl) sl.href=DATA.source_url; }
+  }
   function loadHist(cb){
     if(HIST!==null) return cb(HIST);
     if(location.protocol!=="http:"&&location.protocol!=="https:"){ HIST={}; return cb(HIST); }
@@ -142,8 +214,8 @@
   function openDetail(p){
     detCode=p.code;
     el("dName").textContent=p.name+"  "+p.yield_pct;
-    el("dSub").textContent=p.code+" · "+p.issuer+" · "+p.risk+" · "+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+" · "+p.holding_desc;
-    el("dInfo").innerHTML='<div class="ln"><span>收益口径</span><b>'+p.yield_type+'</b></div><div class="ln"><span>起购/说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+" · "+p.note+'</b></div>'+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'');
+    el("dSub").textContent=p.code+" · "+p.issuer+" · "+(p.risk||"风险未披露")+" · "+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+" · "+p.holding_desc;
+    el("dInfo").innerHTML='<div class="ln"><span>收益口径</span><b>'+p.yield_type+'</b></div>'+(p.buy_rule?'<div class="ln"><span>购买时间</span><b>'+p.buy_rule+'</b></div>':'')+(p.confirm_rule?'<div class="ln"><span>确认份额</span><b>'+p.confirm_rule+'</b></div>':'')+(p.redeem_rule?'<div class="ln"><span>赎回到账</span><b>'+p.redeem_rule+'</b></div>':'')+(p.fees?'<div class="ln"><span>费用</span><b>'+p.fees+'</b></div>':'')+'<div class="ln"><span>起购/说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+" · "+p.note+'</b></div>'+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'');
     el("sheet").classList.add("on");
     renderDet();
   }
@@ -176,19 +248,37 @@
   function render(){
     var list = DATA.products.filter(function(p){
       return (state.issuer==="全部"||p.issuer===state.issuer)&&(state.risk==="全部"||p.risk===state.risk)&&holdMatch(p)&&(!state.q||(p.name+p.code+p.issuer).toLowerCase().indexOf(state.q.toLowerCase())>=0);
-    }).sort(function(a,b){return yv(b)-yv(a)});
+    }).sort(function(a,b){
+      var pa=["工商银行","招商银行"], ia=pa.indexOf(a.issuer), ib=pa.indexOf(b.issuer);
+      if(ia>=0&&ib>=0) return ia!==ib ? ia-ib : yv(b)-yv(a);
+      if(ia>=0) return -1;
+      if(ib>=0) return 1;
+      return yv(b)-yv(a);
+    });
     el("list").innerHTML = list.length? list.map(function(p,i){
       var d="";
       if(p.prev_yield_pct&&p.prev_yield_pct!==p.yield_pct){ var df=(yv(p)-parseFloat(p.prev_yield_pct)).toFixed(2); d=df>0?'<span class="delta up">↑'+df+'</span>':df<0?'<span class="delta dn">↓'+Math.abs(df)+'</span>':'<span class="delta fl">＝</span>'; }
-      return '<div class="card" data-i="'+i+'"><div class="t1"><div><div class="nm">'+p.name+'</div><div class="cd">'+p.code+' · '+p.channel+'</div></div><div class="yld"><b>'+p.yield_pct+'</b><span>'+p.yield_type+' '+d+'</span></div></div><div class="badges"><span class="bd '+p.risk.toLowerCase()+'">'+p.risk+'</span><span class="bd is">'+p.issuer+'</span><span class="bd hd">'+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+'</span></div><div class="ln"><span>赎回规则</span><b>'+p.holding_desc+'</b></div><div class="ln"><span>起购 / 说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+' · '+p.note+'</b></div>'+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'')+'</div>';
+      return '<div class="card" data-i="'+i+'"><div class="t1"><div><div class="nm">'+p.name+'</div><div class="cd">'+p.code+' · '+p.channel+'</div></div><div class="yld"><b>'+p.yield_pct+'</b><span>'+p.yield_type+' '+d+'</span></div></div><div class="badges"><span class="bd '+(p.risk?p.risk.toLowerCase():"hd")+'">'+(p.risk||"风险未披露")+'</span><span class="bd is">'+p.issuer+'</span><span class="bd hd">'+(p.holding_days===0?"每日可赎":"最短持有"+p.holding_days+"天")+'</span></div><div class="ln"><span>赎回规则</span><b>'+p.holding_desc+'</b></div><div class="ln"><span>起购 / 说明</span><b>'+(p.min_buy?p.min_buy+"元起购":"—")+' · '+p.note+'</b></div>'
+      +(p.redeem_tx!=null||p.fees?'<div class="ln"><span>购入 / 赎回</span><b>'+(p.redeem_tx!=null?"赎回到账T+"+p.redeem_tx:"见详情")+(p.fees?" · "+p.fees:"")+'</b></div>':'')+(p.tags&&p.tags.length?'<div class="tags">'+p.tags.join(" · ")+'</div>':'')+'</div>';
     }).join("") : '<div class="empty">没有符合筛选条件的产品</div>';
     window._list=list;
+  }
+  function renderUp(){
+    var up = (DATA.upcoming||[]).slice().sort(function(a,b){ return (a.sale_date||"9999")<(b.sale_date||"9999")?-1:1; });
+    if(!up.length){ el("upPanel").style.display="none"; return; }
+    el("upPanel").style.display="";
+    var today = new Date(); today.setHours(0,0,0,0);
+    el("upList").innerHTML = up.slice(0,8).map(function(u){
+      var days="";
+      if(u.sale_date){ var d=new Date(u.sale_date+"T00:00:00"); var df=Math.round((d-today)/86400000); days = df===0?"今天开售":df>0?df+"天后开售":"已开售"; }
+      return '<div class="ln"><span><b style="color:var(--ink)">'+u.name+'</b> <span class="bd '+String(u.risk||"").toLowerCase()+'" style="margin-left:4px">'+(u.risk||"—")+'</span> <span class="bd is">'+u.issuer+'</span></span><b>'+u.sale_text+(days?" · "+days:"")+' · '+u.holding_desc+'</b></div>';
+    }).join("");
   }
   function stamp(){ el("stamp").textContent="数据截至 "+DATA.generated_at+" · 共 "+DATA.count_kept+" 只（原始 "+DATA.count_total_raw+" 只）"; }
   function load(){
     if(location.protocol==="http:"||location.protocol==="https:"){
-      fetch("data.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.json()}).then(function(j){ DATA=j; window.WM_DATA=j; HIST=null; renderChips(); render(); stamp(); renderMkt(); }).catch(function(){});
-    } else { renderChips(); render(); stamp(); renderMkt(); }
+      fetch("data.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.json()}).then(function(j){ DATA=j; window.WM_DATA=j; HIST=null; renderChips(); render(); renderSummary(); stamp(); renderMkt(); renderUp(); }).catch(function(){});
+    } else { renderChips(); render(); renderSummary(); stamp(); renderMkt(); renderUp(); }
   }
   var lastTick=Date.now();
   function tick(){ lastTick=Date.now(); el("next").textContent="· "+Math.round(REFRESH_MS/60000)+"分钟后自动检查更新"; }
