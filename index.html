@@ -79,6 +79,7 @@
   <div class="row" id="f-issuer"></div>
   <div class="row" id="f-risk"></div>
   <div class="row" id="f-hold"></div>
+  <div class="row" id="f-tx"></div>
 </div>
 <main>
   <div class="panel" id="summary-panel" style="display:none">
@@ -111,6 +112,7 @@
   </div>
 </div>
 <footer>
+  <div style="margin-bottom:2px">T+X＝申请日（工作日15:30前为当日）后第X个工作日：赎回=资金到账、购入=份额确认/起息；节假日顺延。</div>
   <div id="footer-content" style="line-height:1.6">
     数据来源：<a id="source-link" href="https://mobile.cmbchina.com/IEntrustFinance/financeproduct/financelist.html?PrdTyp=B" target="_blank" style="color:#0b3b8c">招商银行APP代销理财公开接口</a> · 仅供参考，不构成投资建议<br>理财非存款，产品有风险，投资需谨慎
   </div>
@@ -121,7 +123,7 @@
   var DATA = window.WM_DATA || {products:[], generated_at:"无数据", market:{dates:[],r1:[],r2:[]}};
   var HIST = null;
   var REFRESH_MS = 30*60*1000;
-  var state = {issuer:"全部", risk:"全部", hold:"全部", q:""};
+  var state = {issuer:"全部", risk:"全部", hold:"全部", tx:"全部", q:""};
   var mktG = "d", detG = "d", detP = 30, detCode = null;
   var mktChart = null, detChart = null;
   function el(id){return document.getElementById(id)}
@@ -236,6 +238,17 @@
     chips("f-issuer", issuers, "issuer");
     chips("f-risk", ["全部","R1","R2"], "risk");
     chips("f-hold", ["全部","每日可赎","≤7天","≤14天","≤30天"], "hold");
+    chips("f-tx", ["全部","T+0","T+1","T+2","T+3+"], "tx");
+  }
+  function txMatch(p){
+    if(state.tx==="全部") return true;
+    var t=p.redeem_tx;
+    if(t===null||t===undefined) return false;
+    if(state.tx==="T+0") return t===0;
+    if(state.tx==="T+1") return t===1;
+    if(state.tx==="T+2") return t===2;
+    if(state.tx==="T+3+") return t>=3;
+    return true;
   }
   function holdMatch(p){
     if(state.hold==="全部") return true;
@@ -247,7 +260,7 @@
   }
   function render(){
     var list = DATA.products.filter(function(p){
-      return (state.issuer==="全部"||p.issuer===state.issuer)&&(state.risk==="全部"||p.risk===state.risk)&&holdMatch(p)&&(!state.q||(p.name+p.code+p.issuer).toLowerCase().indexOf(state.q.toLowerCase())>=0);
+      return (state.issuer==="全部"||p.issuer===state.issuer)&&(state.risk==="全部"||p.risk===state.risk)&&holdMatch(p)&&txMatch(p)&&(!state.q||(p.name+p.code+p.issuer).toLowerCase().indexOf(state.q.toLowerCase())>=0);
     }).sort(function(a,b){
       var pa=["工商银行","招商银行"], ia=pa.indexOf(a.issuer), ib=pa.indexOf(b.issuer);
       if(ia>=0&&ib>=0) return ia!==ib ? ia-ib : yv(b)-yv(a);
