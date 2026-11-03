@@ -81,9 +81,12 @@ def parse_hold_days(ter):
     """从赎回条款解析最短持有天数；每日可赎=0；无法解析=None"""
     if not ter:
         return None
-    m = re.search(r"持[有满]\s*(\d+)\s*[天后日]", ter)
+    m = re.search(r"持[有满]\s*(\d+)\s*(?:个)?\s*(?:自然日|天|日)", ter)
     if m:
         return int(m.group(1))
+    m = re.search(r"持[有满]\s*(\d+)\s*(?:个)?\s*月", ter)
+    if m:
+        return int(m.group(1)) * 30
     m = re.search(r"(\d+)\s*天开放|每\s*(\d+)\s*天开放", ter)
     if m:
         return int(m.group(1) or m.group(2))
